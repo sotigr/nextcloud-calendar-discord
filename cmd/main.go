@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -49,10 +49,10 @@ func waitOnShutdown(cb func(context.Context)) {
 	cb(ctx)
 
 	// catching ctx.Done(). timeout of 5 seconds.
-	select {
-	case <-ctx.Done():
-		log.Println("timeout of 5 seconds.")
-	}
+	// select {
+	// case <-ctx.Done():
+	// 	log.Println("timeout of 5 seconds.")
+	// }
 }
 
 func onEvent(e *gocal.Event, cal *Calendar) {
@@ -89,8 +89,7 @@ func readEventsFromNextCloud(user string, password string, root string, calendar
 			b, err := cc.Read(fpath)
 			if err == nil {
 				buffer := bytes.NewReader(b)
-
-				start, end := time.Now(), time.Now().Add(12*30*24*time.Hour)
+				start, end := time.Now(), time.Now().Add(getRetrievalInterval(5))
 				cal := gocal.NewParser(buffer)
 
 				cal.Start, cal.End = &start, &end
@@ -155,6 +154,17 @@ func parseCalendars(calendarsEnv string, webhooksEnv string) []Calendar {
 	return calendars
 }
 
+func getRetrievalInterval(offset int) time.Duration {
+	retreivalInterStr := os.Getenv("RETRIEVAL_INTERVAL_MINUTES")
+
+	retrievalInter := 10
+	num, err := strconv.Atoi(retreivalInterStr)
+	if err == nil {
+		retrievalInter = num
+	}
+	return time.Duration(retrievalInter+offset) * time.Minute
+}
+
 func main() {
 	running := true
 	user := os.Getenv("NEXTCLOUD_USER")
@@ -164,49 +174,59 @@ func main() {
 	webhooks := os.Getenv("WEBHOOKS")
 
 	calendars := parseCalendars(calendarsEnv, webhooks)
-
+	s, err := gocron.NewScheduler()
+	if err != nil {
+		panic(err.Error())
+	}
 	go func() {
 		for running {
 			events, err := readEventsFromNextCloud(user, password, root, calendars)
 			if err != nil {
 				fmt.Println(err)
-			}
-			s, err := gocron.NewScheduler()
-			if err != nil {
-				panic(err.Error())
+				panic(err)
 			}
 
-			for _, e := range events {
-				for _, ce := range e.Events {
-					_, err := s.NewJob(
-						gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(*ce.Start)),
-						gocron.NewTask(
-							func(ce *gocal.Event, cal *Calendar) {
-								onEvent(ce, cal)
-							},
-							&ce,
-							e.Calendar,
-						),
-					)
-					if err != nil {
-						printErr(err)
-						continue
-					}
-
-				}
-
-			}
-			s.Start()
-
-			fmt.Println("Refreshed events")
-			time.Sleep(10 * time.Minute)
 			for _, j := range s.Jobs() {
 				s.RemoveJob(j.ID())
 			}
+			s.Shutdown()
+			s, err = gocron.NewScheduler()
+			if err != nil {
+				panic(err.Error())
+			}
+			if len(events) != 0 {
+				for _, e := range events {
+					for _, ce := range e.Events {
+						_, err := s.NewJob(
+							gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(*ce.Start)),
+							gocron.NewTask(
+								func(ce *gocal.Event, cal *Calendar) {
+									onEvent(ce, cal)
+								},
+								&ce,
+								e.Calendar,
+							),
+						)
+						if err != nil {
+							printErr(err)
+							continue
+						}
+
+					}
+
+				}
+				s.Start()
+
+				fmt.Println("Refreshed events")
+			}
+
+			time.Sleep(getRetrievalInterval(0))
+
 		}
 	}()
 
 	waitOnShutdown(func(ctx context.Context) {
+		s.Shutdown()
 		running = false
 	})
 

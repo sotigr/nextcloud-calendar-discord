@@ -11,4 +11,5 @@ services:
       - NEXTCLOUD_PASSWORD=mypassword
       - NEXTCLOUD_CALENDARS=mycalendar|mywebhook
       - WEBHOOKS=mywebhook|https://discord.com/api/webhooks/...
+      - RETRIEVAL_INTERVAL_MINUTES=10
 ```
