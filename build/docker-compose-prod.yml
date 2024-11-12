@@ -1,0 +1,8 @@
+ 
+services:
+  discordtasks-p:
+    container_name: discordtasks-p
+    image: sotig/nextcloudcaldiscord:latest 
+    build: 
+      context: ../
+      dockerfile: build/Dockerfile 

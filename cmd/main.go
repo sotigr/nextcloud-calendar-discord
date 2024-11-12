@@ -56,13 +56,15 @@ func waitOnShutdown(cb func(context.Context)) {
 }
 
 func onEvent(e *gocal.Event, cal *Calendar) {
-	fmt.Println(e.Summary, cal.Name)
 	username := fmt.Sprintf("Calendar bot %s", cal.Name)
 	content := fmt.Sprintf("Event: %s", e.Summary)
-	discordwebhook.SendMessage(cal.Webhook, discordwebhook.Message{
+	err := discordwebhook.SendMessage(cal.Webhook, discordwebhook.Message{
 		Username: &username,
 		Content:  &content,
 	})
+	if err != nil {
+		printErr(err)
+	}
 }
 
 func readEventsFromNextCloud(user string, password string, root string, calendars []Calendar) ([]CalendarEvent, error) {
@@ -85,11 +87,15 @@ func readEventsFromNextCloud(user string, password string, root string, calendar
 			continue
 		}
 		for _, f := range files {
+			if f.ModTime().Before(time.Now().Add(-(5 * 24) * time.Hour)) {
+				continue
+			}
 			fpath := filepath.Join(path, f.Name())
 			b, err := cc.Read(fpath)
+
 			if err == nil {
 				buffer := bytes.NewReader(b)
-				start, end := time.Now(), time.Now().Add(getRetrievalInterval(5))
+				start, end := time.Now(), time.Now().Add(getRetrievalInterval(30))
 				cal := gocal.NewParser(buffer)
 
 				cal.Start, cal.End = &start, &end
@@ -189,14 +195,17 @@ func main() {
 			for _, j := range s.Jobs() {
 				s.RemoveJob(j.ID())
 			}
-			s.Shutdown()
 			s, err = gocron.NewScheduler()
 			if err != nil {
 				panic(err.Error())
 			}
+
 			if len(events) != 0 {
+				cn := 0
 				for _, e := range events {
+
 					for _, ce := range e.Events {
+						fmt.Printf("Registering event '%s' %s\n", ce.Summary, (*ce.Start).UTC().String())
 						_, err := s.NewJob(
 							gocron.OneTimeJob(gocron.OneTimeJobStartDateTime(*ce.Start)),
 							gocron.NewTask(
@@ -211,13 +220,13 @@ func main() {
 							printErr(err)
 							continue
 						}
-
+						cn += 1
 					}
-
+					break
 				}
 				s.Start()
 
-				fmt.Println("Refreshed events")
+				fmt.Println("Refreshed events", cn)
 			}
 
 			time.Sleep(getRetrievalInterval(0))
