@@ -1,0 +1,7 @@
+{
+    "verbose": true, 
+    "ext": "go,html,js,mod",
+    "exec": "go run ./cmd || exit 1",
+    "ignore": "media/*",
+    "signal": "SIGTERM" 
+}
