@@ -13,3 +13,4 @@ services:
       - NEXTCLOUD_PASSWORD=mypass
       - NEXTCLOUD_CALENDARS=mycalendar|mywebhook
       - WEBHOOKS=mywebhook|https://discord.com/api/webhooks/...
+
